@@ -1,0 +1,10 @@
+venv
+conversations.txt
+prompt.txt
+image.png
+image2.png
+Password Strength Analyzer Based .pdf
+
+.DS_Store
+__pycache__/
+*.py[cod]
