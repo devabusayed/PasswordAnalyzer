@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 
 from .analysis import compute_penalty_points, detect_patterns
 from .common_passwords import is_common_password, load_common_passwords_checker
+from .crypto import hash_password_pbkdf2
 from .feedback import generate_feedback
 from .generator import generate_passphrase, generate_random_password
+from .policy import MIN_PASSWORD_LENGTH
 from .scoring import ScoreBreakdown, score_password
+from .storage import list_password_hashes, save_password_hash
 
 
 class PasswordStrengthApp(ttk.Frame):
@@ -22,6 +26,9 @@ class PasswordStrengthApp(ttk.Frame):
         self._show_var = tk.BooleanVar(value=False)
         self._strength_var = tk.StringVar(value="Strength: —")
         self._score_var = tk.StringVar(value="Score: —")
+        self._hash_label_var = tk.StringVar(value="password")
+        self._hash_output_var = tk.StringVar(value="Hash: —")
+        self._hash_history_var = tk.StringVar(value="")
 
         self._progress_var = tk.IntVar(value=0)
 
@@ -98,8 +105,29 @@ class PasswordStrengthApp(ttk.Frame):
         )
         ttk.Button(buttons, text="Clear", command=self.clear).grid(row=0, column=3, padx=(10, 0))
 
+        hash_box = ttk.LabelFrame(self, text="Hash & Store (recommended for saving passwords)")
+        hash_box.grid(row=2, column=0, sticky="ew", pady=(16, 0))
+        hash_box.columnconfigure(0, weight=1)
+
+        hash_top = ttk.Frame(hash_box)
+        hash_top.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        hash_top.columnconfigure(1, weight=1)
+
+        ttk.Label(hash_top, text="Label").grid(row=0, column=0, sticky="w")
+        ttk.Entry(hash_top, textvariable=self._hash_label_var, width=18).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Button(hash_top, text="Hash & Save", command=self.hash_and_save).grid(row=0, column=2, padx=(12, 0))
+        ttk.Button(hash_top, text="Refresh History", command=self.refresh_hash_history).grid(row=0, column=3, padx=(8, 0))
+
+        ttk.Label(hash_box, textvariable=self._hash_output_var, style="Subtle.TLabel").grid(
+            row=1, column=0, sticky="w", padx=10, pady=(0, 6)
+        )
+
+        self._hash_history = tk.Text(hash_box, wrap="none", height=6, font=("TkDefaultFont", 10))
+        self._hash_history.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        self._hash_history.configure(state="disabled")
+
         results = ttk.LabelFrame(self, text="Results")
-        results.grid(row=2, column=0, sticky="nsew", pady=(16, 0))
+        results.grid(row=3, column=0, sticky="nsew", pady=(16, 0))
         results.columnconfigure(0, weight=1)
         results.rowconfigure(3, weight=1)
         results.rowconfigure(0, weight=0)
@@ -149,6 +177,7 @@ class PasswordStrengthApp(ttk.Frame):
         self._feedback_text.configure(yscrollcommand=scrollbar.set)
 
         self._set_feedback("Enter a password above, then click “Check Password”.")
+        self.refresh_hash_history()
         self._entry.focus_set()
 
     def _toggle_show(self) -> None:
@@ -194,7 +223,7 @@ class PasswordStrengthApp(ttk.Frame):
         self._set_feedback("\n".join(lines))
 
     def generate_strong_password(self) -> None:
-        pwd = generate_random_password(12)
+        pwd = generate_random_password(MIN_PASSWORD_LENGTH)
         self._password_var.set(pwd)
         self._show_var.set(True)
         self._toggle_show()
@@ -214,8 +243,42 @@ class PasswordStrengthApp(ttk.Frame):
         self._progress_var.set(0)
         self._strength_var.set("Strength: —")
         self._score_var.set("Score: —")
+        self._hash_output_var.set("Hash: —")
         self._set_feedback("Enter a password above, then click “Check Password”.")
         self._entry.focus_set()
+
+    def hash_and_save(self) -> None:
+        pwd = self._password_var.get()
+        if not pwd:
+            messagebox.showwarning("Missing password", "Enter a password first.")
+            return
+        if len(pwd) < MIN_PASSWORD_LENGTH:
+            messagebox.showwarning(
+                "Password too short",
+                f"Password must be at least {MIN_PASSWORD_LENGTH} characters to meet the policy.",
+            )
+            return
+
+        ph = hash_password_pbkdf2(pwd)
+        compact = ph.to_compact_string()
+        row_id = save_password_hash(label=self._hash_label_var.get(), hash_string=compact)
+        self._hash_output_var.set(f"Hash saved (id={row_id}): {compact}")
+        self.refresh_hash_history()
+
+    def refresh_hash_history(self) -> None:
+        rows = list_password_hashes(limit=10)
+        if not rows:
+            text = "No saved hashes yet.\n"
+        else:
+            lines = ["Last saved hashes (most recent first):"]
+            for r in rows:
+                lines.append(f"- {r.id} | {r.created_at} | {r.label} | {r.hash_string}")
+            text = "\n".join(lines) + "\n"
+
+        self._hash_history.configure(state="normal")
+        self._hash_history.delete("1.0", "end")
+        self._hash_history.insert("1.0", text)
+        self._hash_history.configure(state="disabled")
 
 
 def run_app() -> None:

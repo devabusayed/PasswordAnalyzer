@@ -8,3 +8,8 @@ Password Strength Analyzer Based .pdf
 .DS_Store
 __pycache__/
 *.py[cod]
+
+# Generated local DB for hashed-password storage
+data/password_hashes.sqlite
+data/password_hashes.sqlite-wal
+data/password_hashes.sqlite-shm

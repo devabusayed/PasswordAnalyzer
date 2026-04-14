@@ -4,9 +4,11 @@ from pathlib import Path
 import secrets
 import string
 
+from .policy import MIN_PASSWORD_LENGTH
 
-def generate_random_password(length: int = 12) -> str:
-    length = max(8, int(length))
+
+def generate_random_password(length: int = MIN_PASSWORD_LENGTH) -> str:
+    length = max(MIN_PASSWORD_LENGTH, int(length))
     alphabet = string.ascii_lowercase + string.ascii_uppercase + string.digits + "!@#$%^&*()-_=+[]{};:,.?/|"
 
     # Ensure at least one from each major class for a “strong default”.

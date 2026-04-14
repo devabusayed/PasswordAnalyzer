@@ -5,9 +5,11 @@ A Python desktop app that:
 - Analyzes password strength
 - Calculates a strength score (0–100)
 - Detects weak patterns (repeats, sequences, keyboard patterns, basic dictionary words)
+- NLP/linguistic analysis (detects meaningful words/phrases and “natural-language-like” passwords using a small statistical language model)
 - Checks against a common-password list (from a `.txt` file)
 - Provides feedback and improvement tips
 - Suggests stronger passwords (random generator + passphrase generator)
+- Hashes and stores passwords securely (salted PBKDF2; stores **hashes**, not plaintext passwords)
 
 ## Project structure
 
@@ -128,6 +130,25 @@ python scripts/download_seclists_common_passwords.py --url "https://raw.githubus
 
 - Keep the format as: **one password per line**.
 - Very large lists can use a lot of RAM if kept as `.txt`. For millions of passwords, build the SQLite index below.
+
+## Password hashing & storage (PBKDF2)
+
+The app can **hash and store** passwords using a standard salted PBKDF2 scheme:
+
+- Hash format: `pbkdf2_sha256$<iterations>$<saltB64>$<hashB64>`
+- Storage: `data/password_hashes.sqlite`
+
+This is the recommended way to “save passwords” in applications (store hashes, not the original password).
+
+## Machine Learning / NLP notes (linguistic + semantic-ish)
+
+To satisfy the “Machine Learning / NLP / semantic and linguistic analysis” requirement without external dependencies, the app includes:
+
+- **Leetspeak normalization** (e.g., `P@ssw0rd` → `password`)
+- **Word tokenization/segmentation** using `data/wordlist.txt` when available
+- A tiny **character trigram language model** (statistical ML) trained on the wordlist to estimate how “natural-language-like” a password is
+
+This helps detect passwords that contain meaningful words/phrases and penalize them (more guessable than random strings).
 
 ## Millions of common passwords (recommended: SQLite index)
 

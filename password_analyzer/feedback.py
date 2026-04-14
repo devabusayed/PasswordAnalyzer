@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .analysis import PatternFindings
+from .policy import MIN_PASSWORD_LENGTH
 from .scoring import ScoreBreakdown
 
 
@@ -50,9 +51,18 @@ def generate_feedback(
         words = ", ".join(patterns.dictionary_hits[:5])
         bullets.append(f"Contains common word(s): {words}. Avoid dictionary words.")
 
+    # NLP / linguistic analysis
+    if patterns.linguistic.has_meaningful_tokens:
+        toks = ", ".join(patterns.linguistic.tokens[:6])
+        bullets.append(f"NLP detected meaningful token(s): {toks}. Avoid real words/names/phrases.")
+    if patterns.linguistic.language_likeness >= 0.75:
+        bullets.append("Linguistic analysis: password looks like natural language (more guessable).")
+    elif patterns.linguistic.language_likeness >= 0.55:
+        bullets.append("Linguistic analysis: password somewhat resembles natural language.")
+
     # Actionable improvements
-    if len(password) < 12:
-        bullets.append("Use at least 12 characters (longer is better).")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        bullets.append(f"Use at least {MIN_PASSWORD_LENGTH} characters (longer is better).")
     if not any(c.islower() for c in password):
         bullets.append("Add lowercase letters (a-z).")
     if not any(c.isupper() for c in password):
