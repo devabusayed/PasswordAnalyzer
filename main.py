@@ -3,6 +3,13 @@ def main() -> None:
         from password_analyzer.gui import run_app
     except ModuleNotFoundError as e:
         missing = getattr(e, "name", "") or ""
+        if missing == "customtkinter":
+            print(
+                "The GUI requires CustomTkinter.\n"
+                "Install dependencies:\n"
+                "  pip install -r requirements.txt\n"
+            )
+            raise SystemExit(2) from e
         if missing in {"_tkinter", "tkinter"}:
             print(
                 "Tkinter is not available in this Python installation.\n"

@@ -13,3 +13,4 @@ __pycache__/
 data/password_hashes.sqlite
 data/password_hashes.sqlite-wal
 data/password_hashes.sqlite-shm
+data/.vault_key

@@ -2,45 +2,44 @@
 
 A Python desktop app that:
 
-- Analyzes password strength
-- Calculates a strength score (0–100)
+- Analyzes password strength with a 0–100 score (minimum length **16 characters**)
+- Separates **Results** (facts from checks) from **Recommendations** (what to improve)
 - Detects weak patterns (repeats, sequences, keyboard patterns, basic dictionary words)
-- NLP/linguistic analysis (detects meaningful words/phrases and “natural-language-like” passwords using a small statistical language model)
-- Checks against a common-password list (from a `.txt` file)
-- Provides feedback and improvement tips
-- Suggests stronger passwords (random generator + passphrase generator)
-- Hashes and stores passwords securely (salted PBKDF2; stores **hashes**, not plaintext passwords)
+- Checks against a common-password list (from a `.txt` file or optional SQLite index)
+- Suggests stronger passwords (random generator, at least 16 characters)
+- **Hashes** passwords with salted PBKDF2-SHA256 for safe storage
+- **Encrypts** a copy with **AES-256-GCM** (using a user-provided master password) so entries can be **restored** from a local SQLite database
 
 ## Project structure
 
 - `main.py`: entry point
-- `password_analyzer/`: core modules (analysis, scoring, feedback, generator, GUI)
+- `password_analyzer/`: core modules (analysis, scoring, feedback, generator, GUI, crypto, storage)
 - `data/common_passwords.txt`: common passwords list (editable)
+- `data/password_hashes.sqlite`: local vault (created automatically)
 
 ## Requirements
 
-- Python **3.10+** recommended (Python 3.8+ should work)
-- No external packages required (uses Python standard library only)
+- Python **3.10+** recommended (Python 3.8+ should work for most of the code)
+- Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+The only third-party package is **`cryptography`**, used for AES-GCM encryption of stored passwords.
 
 ## How to run (Windows / macOS / Linux)
 
 1. Install Python from the official website: https://www.python.org/downloads/
 2. Download/unzip this project folder.
-3. Open a terminal in the project folder:
-   - **Windows**: Shift + right-click inside the folder → “Open PowerShell window here”
-   - **macOS**: open Terminal, then `cd` into the folder
-   - **Linux**: open Terminal, then `cd` into the folder
+3. Open a terminal in the project folder and install requirements (see above).
 4. Run the app:
 
 ```bash
 python main.py
 ```
 
-If `python` doesn’t work, try:
-
-```bash
-python3 main.py
-```
+If `python` doesn’t work, try `python3 main.py`.
 
 ## Troubleshooting: “No module named _tkinter”
 
@@ -55,44 +54,17 @@ sudo apt-get install -y python3-tk
 ```
 
 - **macOS (Homebrew Python)**:
-  - Install Tk for the same Homebrew Python:
 
 ```bash
 brew install python-tk@3.14
-```
-
-  - Then run the app explicitly with Homebrew Python:
-
-```bash
-/opt/homebrew/bin/python3 -c "import tkinter; print('Tk OK', tkinter.TkVersion)"
 /opt/homebrew/bin/python3 main.py
 ```
 
-- **macOS (pyenv)**:
-  - `brew install python-tk@...` **does not fix** a pyenv Python (pyenv builds its own Python).
-  - You must rebuild the pyenv Python *after* installing Tcl/Tk:
-
-```bash
-brew install tcl-tk
-
-# (Optional) update pyenv so newer Python versions are available
-cd "$(pyenv root)" && git pull
-cd "$(pyenv root)"/plugins/python-build && git pull
-
-export CPPFLAGS="-I$(brew --prefix tcl-tk)/include"
-export LDFLAGS="-L$(brew --prefix tcl-tk)/lib"
-export PKG_CONFIG_PATH="$(brew --prefix tcl-tk)/lib/pkgconfig"
-
-pyenv install 3.11.8
-pyenv local 3.11.8
-
-python -c "import tkinter; print('Tk OK', tkinter.TkVersion)"
-python main.py
-```
+- **macOS (pyenv)**: rebuild Python with Tcl/Tk (see older README versions or Python docs).
 
 ### Cursor/VS Code note
 
-The IDE may mark a Python interpreter as “Recommended” even if it lacks Tkinter. If Tkinter is missing, select an interpreter that has it (e.g. `/opt/homebrew/bin/python3`) or rebuild your pyenv Python with Tcl/Tk as shown above.
+The IDE may mark a Python interpreter as “Recommended” even if it lacks Tkinter. Select an interpreter that includes Tkinter.
 
 ## How the common-password check works
 
@@ -102,84 +74,24 @@ The IDE may mark a Python interpreter as “Recommended” even if it lacks Tkin
 
 ## Use SecLists for the common-password list (recommended)
 
-This project supports the **SecLists** dataset ([GitHub - danielmiessler/SecLists](https://github.com/danielmiessler/SecLists)).
-
-To download a standard list (10k most common) into `data/common_passwords.txt`, run:
-
 ```bash
 python scripts/download_seclists_common_passwords.py
-```
-
-Then start the app:
-
-```bash
 python main.py
 ```
 
-### Use a different SecLists password file
+## Password hashing & encrypted storage
 
-The downloader accepts a `--url` argument pointing to a **raw GitHub** file URL.
+- **PBKDF2-SHA256** (salted, 200k iterations): one-way hash for verification-style storage. Format:  
+  `pbkdf2_sha256$<iterations>$<saltB64>$<hashB64>`
+- **AES-256-GCM**: encrypts the password so it can be **restored** with the same **master password** used when saving.
+- **Database**: `data/password_hashes.sqlite`
 
-Example:
+Older rows may contain only a hash (`hash-only` in the list); new saves store both hash and encrypted payload (`restorable`).
 
-```bash
-python scripts/download_seclists_common_passwords.py --url "https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10k-most-common.txt"
-```
-
-## Notes
-
-- Keep the format as: **one password per line**.
-- Very large lists can use a lot of RAM if kept as `.txt`. For millions of passwords, build the SQLite index below.
-
-## Password hashing & storage (PBKDF2)
-
-The app can **hash and store** passwords using a standard salted PBKDF2 scheme:
-
-- Hash format: `pbkdf2_sha256$<iterations>$<saltB64>$<hashB64>`
-- Storage: `data/password_hashes.sqlite`
-
-This is the recommended way to “save passwords” in applications (store hashes, not the original password).
-
-## Machine Learning / NLP notes (linguistic + semantic-ish)
-
-To satisfy the “Machine Learning / NLP / semantic and linguistic analysis” requirement without external dependencies, the app includes:
-
-- **Leetspeak normalization** (e.g., `P@ssw0rd` → `password`)
-- **Word tokenization/segmentation** using `data/wordlist.txt` when available
-- A tiny **character trigram language model** (statistical ML) trained on the wordlist to estimate how “natural-language-like” a password is
-
-This helps detect passwords that contain meaningful words/phrases and penalize them (more guessable than random strings).
-
-## Millions of common passwords (recommended: SQLite index)
-
-1. Download a large list into `data/common_passwords.txt` (you can point the downloader to a bigger SecLists file URL).
-2. Build the SQLite DB (one-time):
+## Millions of common passwords (SQLite index)
 
 ```bash
 python scripts/build_common_passwords_sqlite.py
-```
-
-3. Run the app:
-
-```bash
-python main.py
-```
-
-When `data/common_passwords.sqlite` exists, the app will **automatically prefer it** (fast lookup, low RAM).
-
-## Passphrase wordlist (download from internet)
-
-By default, the app includes a small built-in list. For better passphrases, download a large wordlist (saved to `data/wordlist.txt`), then the app will use it automatically.
-
-Download the default large list (EFF wordlist):
-
-```bash
-python scripts/download_passphrase_wordlist.py
-```
-
-Then run the app:
-
-```bash
 python main.py
 ```
 

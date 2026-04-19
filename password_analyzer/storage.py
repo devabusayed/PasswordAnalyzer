@@ -1,16 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 import sqlite3
-from typing import Iterable
+from pathlib import Path
 
 
 @dataclass(frozen=True)
-class StoredHash:
+class StoredVaultEntry:
     id: int
     label: str
     hash_string: str
+    enc_payload: str | None
     created_at: str
 
 
@@ -26,6 +26,13 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _migrate(conn: sqlite3.Connection) -> None:
+    cur = conn.execute("PRAGMA table_info(password_hashes)")
+    cols = {str(row[1]) for row in cur.fetchall()}
+    if "enc_payload" not in cols:
+        conn.execute("ALTER TABLE password_hashes ADD COLUMN enc_payload TEXT")
+
+
 def init_hash_db(db_path: Path | None = None) -> None:
     p = db_path or default_hash_db_path()
     conn = _connect(p)
@@ -36,23 +43,31 @@ def init_hash_db(db_path: Path | None = None) -> None:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 label TEXT NOT NULL,
                 hash_string TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                enc_payload TEXT
             )
             """
         )
+        _migrate(conn)
         conn.commit()
     finally:
         conn.close()
 
 
-def save_password_hash(*, label: str, hash_string: str, db_path: Path | None = None) -> int:
+def save_password_hash(
+    *,
+    label: str,
+    hash_string: str,
+    enc_payload: str | None = None,
+    db_path: Path | None = None,
+) -> int:
     p = db_path or default_hash_db_path()
     init_hash_db(p)
     conn = _connect(p)
     try:
         cur = conn.execute(
-            "INSERT INTO password_hashes (label, hash_string) VALUES (?, ?)",
-            (label.strip() or "password", hash_string),
+            "INSERT INTO password_hashes (label, hash_string, enc_payload) VALUES (?, ?, ?)",
+            (label.strip() or "password", hash_string, enc_payload),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -60,18 +75,76 @@ def save_password_hash(*, label: str, hash_string: str, db_path: Path | None = N
         conn.close()
 
 
-def list_password_hashes(*, limit: int = 25, db_path: Path | None = None) -> tuple[StoredHash, ...]:
+def list_password_hashes(*, limit: int = 50, db_path: Path | None = None) -> tuple[StoredVaultEntry, ...]:
     p = db_path or default_hash_db_path()
     if not p.exists():
         return ()
+    init_hash_db(p)
     conn = _connect(p)
     try:
         cur = conn.execute(
-            "SELECT id, label, hash_string, created_at FROM password_hashes ORDER BY id DESC LIMIT ?",
+            """
+            SELECT id, label, hash_string, enc_payload, created_at
+            FROM password_hashes
+            ORDER BY id DESC
+            LIMIT ?
+            """,
             (int(limit),),
         )
         rows = cur.fetchall()
-        return tuple(StoredHash(id=int(r[0]), label=str(r[1]), hash_string=str(r[2]), created_at=str(r[3])) for r in rows)
+        return tuple(
+            StoredVaultEntry(
+                id=int(r[0]),
+                label=str(r[1]),
+                hash_string=str(r[2]),
+                enc_payload=str(r[3]) if r[3] is not None else None,
+                created_at=str(r[4]),
+            )
+            for r in rows
+        )
     finally:
         conn.close()
 
+
+def clear_vault_entries(*, db_path: Path | None = None) -> int:
+    """Delete all saved vault rows. Returns number of rows removed."""
+    p = db_path or default_hash_db_path()
+    if not p.exists():
+        return 0
+    init_hash_db(p)
+    conn = _connect(p)
+    try:
+        cur = conn.execute("DELETE FROM password_hashes")
+        conn.commit()
+        return int(cur.rowcount or 0)
+    finally:
+        conn.close()
+
+
+def get_vault_entry(*, row_id: int, db_path: Path | None = None) -> StoredVaultEntry | None:
+    p = db_path or default_hash_db_path()
+    if not p.exists():
+        return None
+    init_hash_db(p)
+    conn = _connect(p)
+    try:
+        cur = conn.execute(
+            """
+            SELECT id, label, hash_string, enc_payload, created_at
+            FROM password_hashes
+            WHERE id = ?
+            """,
+            (int(row_id),),
+        )
+        r = cur.fetchone()
+        if not r:
+            return None
+        return StoredVaultEntry(
+            id=int(r[0]),
+            label=str(r[1]),
+            hash_string=str(r[2]),
+            enc_payload=str(r[3]) if r[3] is not None else None,
+            created_at=str(r[4]),
+        )
+    finally:
+        conn.close()

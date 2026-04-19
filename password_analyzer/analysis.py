@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from .nlp import LinguisticFindings, analyze_linguistic
-
 
 @dataclass(frozen=True)
 class PatternFindings:
@@ -13,7 +11,6 @@ class PatternFindings:
     has_keyboard_pattern: bool
     has_dictionary_word: bool
     dictionary_hits: tuple[str, ...]
-    linguistic: LinguisticFindings
 
 
 _RE_REPEAT_4 = re.compile(r"(.)\1{3,}")  # aaaa, 1111, !!!!
@@ -31,7 +28,6 @@ _KEYBOARD_PATTERNS = (
 )
 
 # Lightweight built-in dictionary (keeps project dependency-free).
-# This is intended to catch obvious words; the common-password list catches the rest.
 _BASIC_DICTIONARY_WORDS = {
     "love",
     "welcome",
@@ -54,7 +50,6 @@ def _has_sequential_run(s: str, min_len: int = 4) -> bool:
         return False
 
     def is_seq(a: str, b: str) -> bool:
-        # Only consider alnum sequences, case-insensitive for letters.
         if a.isdigit() and b.isdigit():
             return ord(b) - ord(a) == 1
         if a.isalpha() and b.isalpha():
@@ -86,24 +81,24 @@ def detect_patterns(password: str) -> PatternFindings:
             hits.append(w)
     hits.sort()
 
-    linguistic = analyze_linguistic(pwd)
-
     return PatternFindings(
         has_repeated_chars=has_repeated,
         has_sequential=has_seq,
         has_keyboard_pattern=has_keyboard,
         has_dictionary_word=len(hits) > 0,
         dictionary_hits=tuple(hits),
-        linguistic=linguistic,
     )
 
 
 def compute_penalty_points(
     *,
+    password: str,
     is_common_password: bool,
     patterns: PatternFindings,
 ) -> int:
     penalty = 0
+    pwd = password or ""
+
     if is_common_password:
         penalty += 35
     if patterns.has_repeated_chars:
@@ -115,12 +110,4 @@ def compute_penalty_points(
     if patterns.has_dictionary_word:
         penalty += 10
 
-    # NLP/linguistic analysis: penalize passwords that look like real language
-    # or contain meaningful tokens (more guessable than random strings).
-    if patterns.linguistic.has_meaningful_tokens:
-        penalty += 10
-    if patterns.linguistic.language_likeness >= 0.75:
-        penalty += 10
-    elif patterns.linguistic.language_likeness >= 0.55:
-        penalty += 5
     return penalty

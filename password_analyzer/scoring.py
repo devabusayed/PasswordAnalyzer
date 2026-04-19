@@ -4,6 +4,8 @@ import math
 import re
 from dataclasses import dataclass
 
+from .policy import MIN_PASSWORD_LENGTH
+
 
 @dataclass(frozen=True)
 class ScoreBreakdown:
@@ -57,15 +59,15 @@ def score_password(
     pwd = password or ""
     n = len(pwd)
 
-    # Length points (0..45)
+    # Length points (0..45); policy requires at least MIN_PASSWORD_LENGTH (16) characters.
     if n <= 4:
         length_points = 0
     elif n <= 7:
         length_points = 10
     elif n <= 11:
-        length_points = 25
-    elif n <= 15:
-        length_points = 35
+        length_points = 22
+    elif n < MIN_PASSWORD_LENGTH:
+        length_points = 30
     else:
         length_points = 45
 
@@ -85,6 +87,8 @@ def score_password(
     variety_points = min(variety_points, 45)
 
     raw = length_points + variety_points - max(penalty_points, 0)
+    if n < MIN_PASSWORD_LENGTH:
+        raw -= (MIN_PASSWORD_LENGTH - n) * 4
     score_0_100 = int(max(0, min(100, raw)))
 
     entropy = estimate_entropy_bits(pwd)
